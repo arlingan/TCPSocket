@@ -32,6 +32,9 @@ public class AsynchronousClient
 
     // The response from the remote device.  
     private static String response = String.Empty;
+    private static IPAddress ipAddress;
+    private static IPEndPoint remoteEP;
+    private static Socket client;
 
     private static void StartClient()
     {
@@ -41,12 +44,12 @@ public class AsynchronousClient
             // Establish the remote endpoint for the socket.  
             // The name of the
             // remote device is "host.contoso.com".  
-            IPHostEntry ipHostInfo = Dns.GetHostEntry("crossfireplus.jci-io.com");
-            IPAddress ipAddress = ipHostInfo.AddressList[0];
-            IPEndPoint remoteEP = new IPEndPoint(ipAddress, port);
+            IPHostEntry ipHostInfo = Dns.GetHostEntry("crossfireplus-stream-dev.jci-io.com");
+            ipAddress = ipHostInfo.AddressList[0];
+            remoteEP = new IPEndPoint(ipAddress, port);
 
             // Create a TCP/IP socket.  
-            Socket client = new Socket(ipAddress.AddressFamily,
+            client = new Socket(ipAddress.AddressFamily,
                 SocketType.Stream, ProtocolType.Tcp);
 
             // Connect to the remote endpoint.  
@@ -62,15 +65,19 @@ public class AsynchronousClient
                 if (input == "1")
                 {
                     // Send test data to the remote device.  
-                    Send(client, "This is a test<EOF>");
+                    Send("This is a test<EOF>");
                     sendDone.WaitOne();
+                    response = string.Empty;
 
                     // Receive the response from the remote device.  
-                    Receive(client);
+                    Receive();
                     receiveDone.WaitOne();
+                    Thread.Sleep(100);
 
-                    // Write the response to the console.  
-                    Console.WriteLine("Response received : {0}", response);
+                    // Write the response to the console. 
+                    if (!String.IsNullOrEmpty(response))
+                        Console.WriteLine("Response received : {0}", response);
+                    else Console.WriteLine("No Response received from the server...");
                 }
                 else if (input == "0")
                 {
@@ -94,7 +101,7 @@ public class AsynchronousClient
         {
             // Retrieve the socket from the state object.  
             Socket client = (Socket)ar.AsyncState;
-
+            
             // Complete the connection.  
             client.EndConnect(ar);
 
@@ -110,7 +117,7 @@ public class AsynchronousClient
         }
     }
 
-    private static void Receive(Socket client)
+    private static void Receive()
     {
         try
         {
@@ -175,14 +182,30 @@ public class AsynchronousClient
         }
     }
 
-    private static void Send(Socket client, String data)
+    private static void Send(String data)
     {
-        // Convert the string data to byte data using ASCII encoding.  
-        byte[] byteData = Encoding.ASCII.GetBytes(data);
+        try
+        {
+            // Convert the string data to byte data using ASCII encoding.  
+            byte[] byteData = Encoding.ASCII.GetBytes(data);
 
-        // Begin sending the data to the remote device.  
-        client.BeginSend(byteData, 0, byteData.Length, 0,
-            new AsyncCallback(SendCallback), client);
+            // Begin sending the data to the remote device.  
+            client.BeginSend(byteData, 0, byteData.Length, 0,
+                new AsyncCallback(SendCallback), client);
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine(e.ToString());
+            client.Dispose();
+            //client.Shutdown(SocketShutdown.Both);
+            //Thread.Sleep(5000);
+            Console.WriteLine("Trying to RECONNECT");
+            client = new Socket(ipAddress.AddressFamily,
+                SocketType.Stream, ProtocolType.Tcp);
+            client.BeginConnect(remoteEP,
+                new AsyncCallback(ConnectCallback), client);
+            connectDone.WaitOne();
+        }
     }
 
     private static void SendCallback(IAsyncResult ar)
@@ -211,97 +234,3 @@ public class AsynchronousClient
         return 0;
     }
 }
-
-
-//using System;
-//using System.Net;
-//using System.Net.Sockets;
-//using System.Text;
-
-//namespace TCPSocketClient
-//{
-//    class Program
-//    {
-//        static void Main(string[] args)
-//        {
-//            try
-//            {
-
-//                // Establish the remote endpoint  
-//                // for the socket. This example  
-//                // uses port 11111 on the local  
-//                // computer. 
-//                IPHostEntry ipHost = Dns.GetHostEntry("10.211.55.3"); //Dns.GetHostEntry(Dns.GetHostName());
-//                IPAddress ipAddr = ipHost.AddressList[0];
-//                IPEndPoint localEndPoint = new IPEndPoint(ipAddr, 2323);
-
-//                // Creation TCP/IP Socket using  
-//                // Socket Class Costructor 
-//                Socket sender = new Socket(ipAddr.AddressFamily,
-//                           SocketType.Stream, ProtocolType.Tcp);
-
-//                // Connect Socket to the remote  
-//                // endpoint using method Connect() 
-//                sender.Connect(localEndPoint);
-
-//                // We print EndPoint information  
-//                // that we are connected 
-//                Console.WriteLine("Socket connected to -> {0}-{1} ", ipHost.HostName,
-//                              sender.RemoteEndPoint.ToString());
-//                while (true)
-//                {
-//                    try
-//                    {
-//                        Console.WriteLine("Enter 1 to send message");
-//                        Console.WriteLine("Enter 0 to quit the connection");
-//                        var input = Console.ReadLine();
-//                        if (input == "1")
-//                        {
-//                            // Creation of messagge that 
-//                            // we will send to Server 
-//                            byte[] messageSent = Encoding.ASCII.GetBytes("Test Client<EOF>");
-//                            int byteSent = sender.Send(messageSent);
-
-//                            // Data buffer 
-//                            byte[] messageReceived = new byte[1024];
-
-//                            // We receive the messagge using  
-//                            // the method Receive(). This  
-//                            // method returns number of bytes 
-//                            // received, that we'll use to  
-//                            // convert them to string 
-//                            int byteRecv = sender.Receive(messageReceived);
-//                            Console.WriteLine("Message from Server -> {0}",
-//                                  Encoding.ASCII.GetString(messageReceived,
-//                                                             0, byteRecv));
-//                        }
-//                        else if (input == "0")
-//                        {
-//                            sender.Shutdown(SocketShutdown.Both);
-//                            sender.Close();
-//                        }
-//                        else Console.WriteLine("Invalid Input");
-//                    }
-//                    // Manage of Socket's Exceptions 
-//                    catch (ArgumentNullException ane)
-//                    {
-//                        Console.WriteLine("ArgumentNullException : {0}", ane.ToString());
-//                    }
-//                    catch (SocketException se)
-//                    {
-//                        Console.WriteLine("SocketException : {0}", se.ToString());
-//                    }
-//                    catch (Exception e)
-//                    {
-//                        Console.WriteLine("Unexpected exception : {0}", e.ToString());
-//                    }
-//                }
-//            }
-//            catch (Exception e)
-//            {
-
-//                Console.WriteLine(e.ToString());
-//            }
-//        }
-//    }
-//}
